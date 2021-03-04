@@ -38,3 +38,106 @@ All the newly built temp images for ARM can be found at:
 * pingcap2021/tidb-monitor-initializer:v4.0.10
 * pingcap2021/tidb-backup-manager:v1.1.11
 * pingcap2021/br:v4.0.10
+
+## Deploy EKS cluster
+
+### Prerequisites
+1. Install Helm 3: used for deploying TiDB Operator.
+2. Complete all operations in Getting started with eksctl.
+3. Install kubectl.
+
+### Create a EKS cluster and a node pool
+
+Sample cluster.yaml for a 3-node TiDB, 3-node TiKV and one node PD cluster.
+```YAML
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: benchmark-arm #replace with your cluster name
+  region: ap-southeast-1 #replace with your preferred AWS region
+nodeGroups:
+  - name: admin
+    desiredCapacity: 1
+    instanceType: c6g.large
+    privateNetworking: true
+    labels:
+      dedicated: admin
+  - name: tidb-1a
+    desiredCapacity: 1
+    instanceType: c6g.2xlarge
+    privateNetworking: true
+    availabilityZones: ["ap-southeast-1a"]
+    labels:
+      dedicated: tidb
+    taints:
+      dedicated: tidb:NoSchedule
+  - name: tidb-1b
+    desiredCapacity: 1
+    instanceType: c6g.2xlarge
+    privateNetworking: true
+    availabilityZones: ["ap-southeast-1b"]
+    labels:
+      dedicated: tidb
+    taints:
+      dedicated: tidb:NoSchedule
+  - name: tidb-1c
+    desiredCapacity: 1
+    instanceType: c6g.2xlarge
+    privateNetworking: true
+    availabilityZones: ["ap-southeast-1c"]
+    labels:
+      dedicated: tidb
+    taints:
+      dedicated: tidb:NoSchedule
+  - name: pd-1a
+    desiredCapacity: 1
+    instanceType: c6g.large
+    privateNetworking: true
+    availabilityZones: ["ap-southeast-1a"]
+    labels:
+      dedicated: pd
+    taints:
+      dedicated: pd:NoSchedule
+  - name: tikv-1a
+    desiredCapacity: 1
+    instanceType: r6g.2xlarge
+    privateNetworking: true
+    availabilityZones: ["ap-southeast-1a"]
+    labels:
+      dedicated: tikv
+    taints:
+      dedicated: tikv:NoSchedule
+  - name: tikv-1b
+    desiredCapacity: 1
+    instanceType: r6g.2xlarge
+    privateNetworking: true
+    availabilityZones: ["ap-southeast-1b"]
+    labels:
+      dedicated: tikv
+    taints:
+      dedicated: tikv:NoSchedule
+  - name: tikv-1c
+    desiredCapacity: 1
+    instanceType: r6g.2xlarge
+    privateNetworking: true
+    availabilityZones: ["ap-southeast-1c"]
+    labels:
+      dedicated: tikv
+    taints:
+      dedicated: tikv:NoSchedule
+```
+
+Execute the following command to create the cluster:
+```shell
+eksctl create cluster -f cluster.yaml
+```
+
+## Deploy TiDB Operator
+
+Follow the steps described in [Deploy TiDB Operator](https://docs.pingcap.com/tidb-in-kubernetes/stable/get-started#deploy-tidb-operator)
+
+For step 3 of installing the TiDB Operator, use the arm images as follows:
+```shell
+helm install --namespace tidb-admin tidb-operator pingcap/tidb-operator --version v1.1.10 \
+    --set operatorImage=pingcap2021/tidb-operator:v1.1.14
+```
