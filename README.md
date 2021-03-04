@@ -314,6 +314,7 @@ spec:
 ```
 
 After you deployed the monitor, the pod will be in error state since the `tidb-monitor-reloader` doesn't have a arm specific image as of now.</br>
+
 Instead, get the monitor deployment using command:
 ```shell
 kubectl get deploy ${monitor-deployment-name} -n tidb-cluster -o yaml
@@ -322,3 +323,5 @@ kubectl get deploy ${monitor-deployment-name} -n tidb-cluster -o yaml
 Remove the `tidb-monitor-reloader` container from the deployment YAML and also rename the deployment.
 
 Delete existing deployment and deploy the new monitor deployment.
+
+Once the monitor deployment is done successfully, access the Grafana dashboard from the LoadBalancer domain name of the grafana service under `tidb-cluster` namespace.
