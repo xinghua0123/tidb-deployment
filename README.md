@@ -1,6 +1,6 @@
 # TiDB Deployment on Graviton2-based EKS
 
-## Prepare ARM based docker images
+## Prepare ARM based docker images (not needed)
 
 For `tidb-operator`,  re-compile using `GOARCH=arm64 make`.</br>
 Build new docker image like:</br>
