@@ -58,7 +58,7 @@ metadata:
 nodeGroups:
   - name: admin
     desiredCapacity: 1
-    instanceType: c6g.large
+    instanceType: c6g.large # use Graviton2 powered EC2 instances
     privateNetworking: true
     labels:
       dedicated: admin
@@ -141,3 +141,184 @@ For step 3 of installing the TiDB Operator, use the arm images as follows:
 helm install --namespace tidb-admin tidb-operator pingcap/tidb-operator --version v1.1.10 \
     --set operatorImage=pingcap2021/tidb-operator:v1.1.14
 ```
+
+## Deploy TiDB Cluster
+
+### TiDB Cluster
+Download sample `TidbCluster` and `TidbMonitor`CR YAML:
+```shell
+curl -O https://raw.githubusercontent.com/pingcap/tidb-operator/master/examples/aws/tidb-cluster.yaml && \
+curl -O https://raw.githubusercontent.com/pingcap/tidb-operator/master/examples/aws/tidb-monitor.yaml
+```
+
+Edit configurations to use the arm images.
+`TidbCluster` YAML
+```YAML
+apiVersion: pingcap.com/v1alpha1
+kind: TidbCluster
+metadata:
+  name: arm-test
+  namespace: tidb-cluster
+spec:
+  version: v4.0.10
+  timezone: UTC
+  configUpdateStrategy: RollingUpdate
+  pvReclaimPolicy: Retain
+  schedulerName: tidb-scheduler
+  enableDynamicConfiguration: true
+  pd:
+    baseImage: pingcap2021/pd # use the arm image
+    replicas: 1
+    requests:
+      storage: "50Gi"
+    config:
+      log:
+        level: info
+      replication:
+        location-labels:
+        - zone
+        max-replicas: 1
+    nodeSelector:
+      dedicated: pd
+    tolerations:
+    - effect: NoSchedule
+      key: dedicated
+      operator: Equal
+      value: pd
+  tikv:
+    baseImage: pingcap2021/tikv # use the arm image
+    replicas: 3
+    requests:
+      storage: "1000Gi"
+    config: {}
+    nodeSelector:
+      dedicated: tikv
+    tolerations:
+    - effect: NoSchedule
+      key: dedicated
+      operator: Equal
+      value: tikv
+  tidb:
+    baseImage: pingcap2021/tidb # use the arm image
+    replicas: 3
+    service:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
+        # To expose the LB to the internet
+        # service.beta.kubernetes.io/aws-load-balancer-internal: '0.0.0.0/0'
+        service.beta.kubernetes.io/aws-load-balancer-type: nlb 
+      exposeStatus: true
+      externalTrafficPolicy: Local
+      type: LoadBalancer
+    config:
+      log:
+        level: info
+      performance:
+        max-procs: 0
+        tcp-keep-alive: true
+    annotations:
+      tidb.pingcap.com/sysctl-init: "true"
+    podSecurityContext:
+      sysctls:
+      - name: net.ipv4.tcp_keepalive_time
+        value: "300"
+      - name: net.ipv4.tcp_keepalive_intvl
+        value: "75"
+      - name: net.core.somaxconn
+        value: "32768"
+    separateSlowLog: true
+    nodeSelector:
+      dedicated: tidb
+    tolerations:
+    - effect: NoSchedule
+      key: dedicated
+      operator: Equal
+      value: tidb
+```
+
+After you have deployed `TidbCluster` YAML, you will see something like below:
+```shell
+kubectl get pods -n tidb-cluster
+NAME                                  READY   STATUS     RESTARTS   AGE
+arm-test-discovery-545b84f7b6-4ch4x   1/1     Running    0          27m
+arm-test-pd-0                         1/1     Running    0          27m
+arm-test-tidb-0                       2/2     Running    0          25m
+arm-test-tidb-1                       2/2     Running    0          25m
+arm-test-tidb-2                       2/2     Running    0          25m
+arm-test-tikv-0                       1/1     Running    0          26m
+arm-test-tikv-1                       1/1     Running    0          26m
+arm-test-tikv-2                       1/1     Running    0          26m
+```
+
+Until now, TiDB cluster is up and running. You can try to connect to TiDB cluster using:
+```shell
+mysql -h ${tidb-nlb-dnsname} -P 4000 -u root
+```
+where `${tidb-nlb-dnsname}` is the LoadBalancer domain name of the TiDB service under `tidb-cluster` namespace.
+
+### TiDB Monitor
+`TidbMonitor` YAML:
+```YAML
+apiVersion: pingcap.com/v1alpha1
+kind: TidbMonitor
+metadata:
+  name: ron-monitor
+spec:
+  alertmanagerURL: ""
+  annotations: {}
+  clusters:
+  - name: arm-test
+  grafana:
+    baseImage: grafana/grafana
+    envs:
+      # Configure Grafana using environment variables except GF_PATHS_DATA, GF_SECURITY_ADMIN_USER and GF_SECURITY_ADMIN_PASSWORD
+      # Ref https://grafana.com/docs/installation/configuration/#using-environment-variables
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # if grafana is running behind a reverse proxy with subpath http://foo.bar/grafana
+      # GF_SERVER_DOMAIN: foo.bar
+      # GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+    imagePullPolicy: IfNotPresent
+    logLevel: info
+    password: admin
+    service:
+      portName: http-grafana
+      type: LoadBalancer
+    username: admin
+    version: 6.1.6
+  imagePullPolicy: IfNotPresent
+  initializer:
+    baseImage: pingcap2021/tidb-monitor-initializer # use the arm image
+    imagePullPolicy: IfNotPresent
+    version: v4.0.10
+  kubePrometheusURL: ""
+  persistent: true
+  prometheus:
+    baseImage: prom/prometheus
+    imagePullPolicy: IfNotPresent
+    logLevel: info
+    reserveDays: 12
+    service:
+      portName: http-prometheus
+      type: NodePort
+    version: v2.18.1
+  reloader:
+    baseImage: pingcap/tidb-monitor-reloader 
+    imagePullPolicy: IfNotPresent
+    service:
+      portName: tcp-reloader
+      type: NodePort
+    version: v1.0.1
+  storage: 100Gi
+```
+
+After you deployed the monitor, the pod will be in error state since the `tidb-monitor-reloader` doesn't have a arm specific image as of now.</br>
+Instead, get the monitor deployment using command:
+```shell
+kubectl get deploy ${monitor-deployment-name} -n tidb-cluster -o yaml
+```
+
+Remove the `tidb-monitor-reloader` container from the deployment YAML and also rename the deployment.
+
+Delete existing deployment and deploy the new monitor deployment.
