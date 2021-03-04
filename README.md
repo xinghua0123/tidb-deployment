@@ -16,7 +16,7 @@ For `br`, use `centos:8` as base image.</br>
 
 For `tidb-backup-manager`, change base image and `amd64` to `arm64` in Dockerfile.</br>
 ```
-# sed -i 's/FROM.*/FROM centos:/' images/tidb-backup-manager/Dockerfile
+# sed -i 's/FROM.*/FROM centos:8/' images/tidb-backup-manager/Dockerfile
 # sed -i 's/amd64/arm64/g' images/tidb-backup-manager/Dockerfile
 # GOARCH=arm64 GOOS=linux DOCKER_REPO=pingcap make backup-docker
 ```
